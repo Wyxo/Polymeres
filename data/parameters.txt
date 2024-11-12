@@ -1,0 +1,15 @@
+T 2
+dt 0.1
+nu 1
+K 40
+a_interaction 300
+sigma 0.08
+kappa 1e4
+kappa_wall 3e4
+k_string 250
+epsilon 0.1
+theta 5e1
+rate_theta 0.1
+periodic 0
+Lx 5
+Ly 5
