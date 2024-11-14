@@ -40,7 +40,7 @@ Polymer::Polymer(double2 s, double2 g, double T1, double dt1, double r, double L
 
 void Polymer::ElasticResultant(double k_string, const function<double2(double2, double2)>& difference)
 {
-  for (int idx_atom = 1; idx_atom < N - 1; idx_atom++)
+  for (int idx_atom = 1; idx_atom < N-1; idx_atom++)
   {
     forces[idx_atom] += (k_string / dt) * (difference(atoms[idx_atom], atoms[idx_atom-1]) + difference(atoms[idx_atom], atoms[idx_atom+1]));
   }
@@ -52,15 +52,14 @@ void Polymer::GroundResultant(double nu, double K, double k_string,const functio
 {  
   double2 dX_goal;
   double dX_norm;
-  for (int idx_atom = 1; idx_atom < N; idx_atom++)
+  for (int idx_atom = 1; idx_atom < N-1; idx_atom++)
   {
     dX_goal = difference(atoms[idx_atom], goal);
     dX_norm = !dX_goal;
     forces[idx_atom] += K * nu * exp(-nu * dX_norm)*dX_goal;
   }
-  if (dX_norm > 0.05){
-    forces[N-1] += (k_string*1.4+K/1.4)*dX_goal/dX_norm;
-  }
+  dX_goal = difference(atoms[N-1], goal);
+  forces[N-1] += (k_string*1.4+K/1.4)*dX_goal/sqrt(dX_goal%dX_goal+1);
 }
 
 void Polymer::GroundResultant_periodic(double nu, double K, double k_string)

@@ -46,11 +46,11 @@ Simulation::Simulation(string dir1)
 
   if (is_periodic)
   {
-    difference = [](double2 a, double2 b){return euclidian_distance(a, b);};
+    difference = [this](double2 a, double2 b) { return periodic_distance(a, b, this->Lx, this->Ly); };
   }
   else
   {
-    difference = [this](double2 a, double2 b) { return periodic_distance(a, b, this->Lx, this->Ly); };
+    difference = [](double2 a, double2 b){return euclidian_distance(a, b);};
   }
   N_poly = 0;
   // Get time to save data in corresponding directory
@@ -75,15 +75,16 @@ normal_distribution<double> d(0, 1);
 double Simulation::UpdatePosition(double& Theta, int cpt)
 {
   this->Simulation::NeighbourInteraction();
-  // max of the gradient of the cost to control the convergence
-  double max_F = 0;
+  // L1 norm of the gradients of the cost to control the convergence
+  double delta = 0;
+  int num = 0;
   for (Polymer& poly : crowd)
   {
+    num++;
     // FORCES CALCULATION
-    /*
-    if (is_periodic){cout << 1 << endl;poly.GroundResultant_periodic(nu, K, k_string);}
+    if (is_periodic){poly.GroundResultant_periodic(nu, K, k_string);}
     else{poly.GroundResultant(nu, K, k_string, difference);}
-    */
+    
     poly.ElasticResultant(k_string, difference);
     for (int idx_obstacle = 0; idx_obstacle < N_obstacle; ++idx_obstacle)
     {
@@ -116,7 +117,7 @@ double Simulation::UpdatePosition(double& Theta, int cpt)
     } 
     // SEMI IMPLICIT EULER INTEGRATION
     double normF = !poly.forces;
-    max_F += normF/poly.N;
+    delta += normF/poly.N;
     poly.speed += poly.dt_optimisation*poly.forces;
     if (normF > 0){
       poly.speed = (1-poly.alpha_opt)*poly.speed + poly.alpha_opt*(!poly.speed/normF)*poly.forces;
@@ -129,7 +130,7 @@ double Simulation::UpdatePosition(double& Theta, int cpt)
     }
     poly.forces = vector2(poly.N, double2(0,0));
   }
-  return max_F/(crowd.size());
+  return delta/(crowd.size());
 }
 
 void Simulation::RunSimulation(int N_Iterations, bool save_optimization)
@@ -147,15 +148,15 @@ void Simulation::RunSimulation(int N_Iterations, bool save_optimization)
     // Decrease temperature at rate_theta
     if (theta_temp > rate_theta){theta_temp -= rate_theta;    }
     else {theta_temp = 0;}
-    if (save_optimization && cpt % 50 == 0){this -> SaveSimulation(cpt, theta_temp, delta);    }
+    if (save_optimization && cpt % 1 == 0){this -> SaveSimulation(cpt, theta_temp, delta);    }
   }
   SaveSimulation(cpt, theta_temp, delta);
-  //cout << cpt << endl;
 }
 
 // Vision function
 inline double W(double theta){return 1/(1 + theta * theta);}
 
+// Adjusts an angle to be within the range [-π, π].
 inline double modulo_pi(double angle)
 { 
   if (angle > M_PI)  {return angle - 2*M_PI;}
@@ -163,6 +164,19 @@ inline double modulo_pi(double angle)
   return angle;
 }
 
+/**
+ * @brief Calculates the interaction forces between pedestrians in the simulation.
+ * 
+ * This function performs the following steps:
+ * 1. Calculates the local direction of each pedestrian based on the positions of their atoms.
+ * 2. For each pair of pedestrians, calculates the interaction forces between their atoms.
+ * 3. Takes into account the visual perception of each pedestrian when calculating the forces.
+ * 4. Adds a contact force if the distance between atoms is less than the sum of their radii.
+ * 
+ * The interaction force is calculated using an exponential decay function based on the distance
+ * between atoms, and is weighted by a visual prefactor that depends on the angle at which one
+ * pedestrian sees the other.
+ */
 void Simulation::NeighbourInteraction()
 {
   // Calculate the local direction of each pedestrian
@@ -191,7 +205,6 @@ void Simulation::NeighbourInteraction()
         double2 F = (a_interaction * exp(-(dXnorm - crowd[idx_poly1].radius - crowd[idx_poly2].radius) / sigma) / dXnorm) * dX;
 
         // delta angle compared to horizontal 
-        /*
         double dAngle1 = atan2(-dX.second, -dX.first);
         double dAngle2 = atan2(dX.second, dX.first);
 
@@ -203,9 +216,8 @@ void Simulation::NeighbourInteraction()
         // weight the force with the visual prefactor
         double W1 = W(Angle1);
         double W2 = W(Angle2);
-        */
-        crowd[idx_poly1].forces[idx_atom] += F;
-        crowd[idx_poly2].forces[idx_atom] -= F;
+        crowd[idx_poly1].forces[idx_atom] += W1 * F;
+        crowd[idx_poly2].forces[idx_atom] -= W2 * F;
       
         // contact force taken into account if ri + rj > dPositionNorm
         double diff = (crowd[idx_poly1].radius + crowd[idx_poly2].radius) / dXnorm - 1;
@@ -218,40 +230,6 @@ void Simulation::NeighbourInteraction()
       }      
     }
   }
-}
-
-string Simulation::InitFile()
-{
-  auto t = time(nullptr);
-  auto tm = *localtime(&t);
-  ostringstream oss;
-  ostringstream oss2;
-  ostringstream oss3;
-  oss << put_time(&tm, "%Y-%m-%d %H-%M");
-  oss2 << put_time(&tm, "%Y-%m");
-  oss3 << put_time(&tm, "%Y-%m-%d");
-  string full_date_str = oss.str();
-  string month_str = oss2.str();
-  string date_str = oss3.str();
-  month_str = "saves/" + month_str;
-  date_str = month_str + "/" + date_str;
-  full_date_str = date_str + "/" + full_date_str;
-  mkdir(month_str.c_str(), 0777);
-  mkdir(date_str.c_str(), 0777);
-  mkdir(full_date_str.c_str(), 0777);
-  // Copy each file in the directory
-  vector<string> files = {"parameters.txt", "environment.txt", "crowd.txt"};
-  for (string filename:files)
-  {
-    ifstream src(filename.c_str(), ios::binary);
-    string dest1 = full_date_str + "/" + filename;
-    ofstream dest(dest1.c_str(), ios::binary);
-    dest << src.rdbuf();
-  }
-  string filename = full_date_str + "/" + "data.txt";
-  ofstream outFile(filename);
-  outFile.close();
-return filename;
 }
 
 void Simulation::SaveSimulation(const int& step, const double& theta, const double& delta)

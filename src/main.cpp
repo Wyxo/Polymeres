@@ -65,6 +65,10 @@ int main(int argc, char *argv[])
         break;
     }
   }
+  // Check if the data file already exists and remove it if it does
+  string filepath = dir + "/data.txt";
+  remove(filepath.c_str());
+  
   // Run the simulation
   Simulation simu(dir);
   int cpt = 0;
